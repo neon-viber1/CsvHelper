@@ -1047,6 +1047,10 @@ List<Supplier> suppliers = reader.GetRecords<Supplier>().ToList();
   without a stand-in are mapped as usual, and a constructor parameter takes the attributes of the stand-in with its name.
 - Attributes of the type itself, such as `[CsvOptions]` and `[CsvIgnoreBase]`, go on the map class, and so do the
   methods of `[CsvValidate]`.
+- Only one `[CsvRecordMap]` class per mapped type is supported in a compilation. Multiple map classes targeting the
+  same type are a compile-time error ([CSVH012](#compile-time-diagnostics)); none of their mappers are generated or
+  registered. Declaration, source-file and registration order do not select a map, and there is no API to select
+  between these map classes.
 - The generated code uses what the map class can access: the public members and constructors of the mapped type (and
   internal ones in the same assembly). `[CsvConstructor]` on the mapped type is honored when it has one.
 - `GetRecords<T>()`, `WriteRecords<T>()` and the other record methods find the mapper as they find those of
@@ -1442,7 +1446,7 @@ The generator reports problems when you compile:
 | CSVH009 | A [converter](#converters-csvconverter) cannot be used. On a member: it does not implement `ICsvConverter<T>` for the member's type, or has no parameterless constructor. On a type: it does not derive from `CsvRecordMapper<T>`, has no `(CsvReader)` constructor, or the type also has `[CsvRecord]`. On the assembly: it implements no `ICsvConverter<T>`, has no parameterless constructor, or converts a type that another converter of the assembly converts. A member or type with two `[CsvConverter]`s. |
 | CSVH010 | Warning: an attribute does not apply to its member, such as `[CsvFormat]` on an `int`, several formats for a type without `ParseExact(string, string[], IFormatProvider)`, `Prefix` on a member that is not a nested record, or `Width` on a collection, and is ignored. |
 | CSVH011 | An attribute argument is not valid: a `[CsvDefault]` or `[CsvConstant]` that does not convert to the member's type, an empty list of values, a value that is both true and false, an enum name that names two members, a `[CsvValidate]` without a suitable method, a dictionary without `Index`, or an `EndIndex` before `Index`. |
-| CSVH012 | A [`[CsvRecordMap]`](#types-you-cannot-change-csvrecordmap) cannot map its type: the type is abstract, open generic, inaccessible or has a mapper already, or a member of the map class stands in for no member of the type, or for one of another type. |
+| CSVH012 | A [`[CsvRecordMap]`](#types-you-cannot-change-csvrecordmap) cannot map its type: the type is abstract, open generic, inaccessible, has a mapper already, or is targeted by multiple map classes in the compilation; or a member of the map class stands in for no member of the type, or for one of another type. |
 
 For example, a member of a type without a static `Parse` fails the build with
 `error CSVH002: 'Invoice.Color' has type 'Color', which cannot be read from a CSV field; use a type with a static Parse method or add [CsvIgnore]`.

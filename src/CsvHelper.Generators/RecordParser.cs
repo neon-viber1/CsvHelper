@@ -189,7 +189,10 @@ internal sealed class RecordParser
 		// typeof of a type that does not exist is already a compile error.
 		var parser = new RecordParser(context, mappedType is null || mappedType.TypeKind == TypeKind.Error ? null : mappedType, cancellationToken);
 
-		return parser.mapped ? parser.Build() : parser.EmptyModel() with { Skip = true };
+		return parser.mapped ? parser.Build() with
+		{
+			MapLocation = LocationInfo.From(parser.AttributeLocation(context.Attributes[0], parser.syntax.Identifier.GetLocation()))
+		} : parser.EmptyModel() with { Skip = true };
 	}
 
 	/// <summary>The model of the type before anything about its members is known.</summary>

@@ -263,7 +263,7 @@ The generator reports problems when you compile:
 | CSVH009 | A `[CsvConverter]` cannot be used: the wrong interface or base class, no suitable constructor, two on one member, or two assembly converters of one type. |
 | CSVH010 | Warning: an attribute does not apply to its member, such as `[CsvFormat]` on an `int`, and is ignored. |
 | CSVH011 | An attribute argument is not valid, such as a `[CsvDefault]` or `[CsvConstant]` that does not convert to the member's type, or a `[CsvValidate]` without a suitable method. |
-| CSVH012 | A `[CsvRecordMap]` cannot map its type, or a member of the map class stands in for no member of the type. |
+| CSVH012 | A `[CsvRecordMap]` cannot map its type (including multiple map classes targeting the same type in a compilation), or a member of the map class stands in for no member of the type. |
 
 The generator needs C# 9 and a Roslyn 4.3 compiler or later (the .NET 6.0.400 SDK, Visual Studio 2022 17.3). A
 generated module initializer registers each mapper, so

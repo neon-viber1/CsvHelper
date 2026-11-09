@@ -293,13 +293,17 @@ public class RecordGeneratorTests
 
 	private static (ImmutableArray<Diagnostic> Generator, ImmutableArray<Diagnostic> Compilation, string Output) Run(
 		string source, LanguageVersion version = LanguageVersion.Latest, params MetadataReference[] references)
+		=> Run([source], version, references);
+
+	private static (ImmutableArray<Diagnostic> Generator, ImmutableArray<Diagnostic> Compilation, string Output) Run(
+		string[] sources, LanguageVersion version = LanguageVersion.Latest, params MetadataReference[] references)
 	{
 		var parseOptions = new CSharpParseOptions(version);
-		var compilation = CSharpCompilation.Create("Test", [CSharpSyntaxTree.ParseText(source, parseOptions)], [.. References, .. references],
+		var compilation = CSharpCompilation.Create("Test", sources.Select(source => CSharpSyntaxTree.ParseText(source, parseOptions)), [.. References, .. references],
 			new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
 		var driver = CSharpGeneratorDriver.Create([new CsvRecordGenerator().AsSourceGenerator()], parseOptions: parseOptions);
 		driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
-		var generated = string.Join("\n", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+		var generated = string.Join("\n", output.SyntaxTrees.Skip(sources.Length).Select(t => t.ToString()));
 
 		return (diagnostics, output.GetDiagnostics(), generated);
 	}
@@ -701,6 +705,93 @@ public class RecordGeneratorTests
 		Assert.Empty(generator);
 		Assert.Empty(compilation.Where(d => d.Severity >= DiagnosticSeverity.Warning));
 		Assert.Contains("Register<global::G<int>>(global::M.CreateCsvMapper);", output);
+	}
+
+	[Theory]
+	[InlineData(false, false)]
+	[InlineData(false, true)]
+	[InlineData(true, false)]
+	[InlineData(true, true)]
+	public void ReportsDuplicateRecordMapsRegardlessOfDeclarationOrder(bool reverse, bool separateFiles)
+	{
+		const string target = "public class T { public int Value { get; set; } }";
+		string[] maps = [
+			"[CsvHelper.CsvRecordMap(typeof(T))] partial class MyMap { [CsvHelper.CsvColumn(\"First\")] public int Value { get; set; } }",
+			"[CsvHelper.CsvRecordMap(typeof(T))] partial class ZMyMap { [CsvHelper.CsvColumn(\"Second\")] public int Value { get; set; } }"
+		];
+		if (reverse) Array.Reverse(maps);
+		string[] sources = separateFiles ? [target, .. maps] : [target + string.Join("\n", maps)];
+		var (generator, compilation, output) = Run(sources);
+
+		Assert.Equal(2, generator.Length);
+		Assert.All(generator, diagnostic =>
+		{
+			Assert.Equal("CSVH012", diagnostic.Id);
+			Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+			Assert.Contains("multiple [CsvRecordMap] classes target this type", diagnostic.GetMessage());
+			Assert.Contains("only one map per type is supported", diagnostic.GetMessage());
+			Assert.Equal(LocationKind.ExternalFile, diagnostic.Location.Kind);
+			Assert.Equal("CsvHelper.CsvRecordMap(typeof(T))".Length, diagnostic.Location.SourceSpan.Length);
+		});
+		Assert.Equal(["global::MyMap", "global::ZMyMap"], generator.Select(diagnostic => diagnostic.GetMessage().Split('\'')[1]).OrderBy(name => name));
+		Assert.Empty(compilation.Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning));
+		Assert.Empty(output);
+	}
+
+	[Theory]
+	[InlineData("MyMap")]
+	[InlineData("ZMyMap")]
+	public void SingleRecordMapGeneratesAndRegisters(string mapName)
+	{
+		var (generator, compilation, output) = Run($$"""
+			using CsvHelper;
+			public class T { public int Value { get; set; } }
+			[CsvRecordMap(typeof(T))]
+			partial class {{mapName}} { [CsvColumn("Mapped Value")] public int Value { get; set; } }
+			""");
+
+		Assert.Empty(generator);
+		Assert.Empty(compilation.Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning));
+		Assert.Contains($"Register<global::T>(global::{mapName}.CreateCsvMapper);", output);
+		Assert.Contains($"Register<global::T>(global::{mapName}.CreateCsvWriter);", output);
+		Assert.Contains("\"Mapped Value\"", output);
+	}
+
+	[Fact]
+	public void DuplicateRecordMapsDoNotSuppressOtherTargets()
+	{
+		var (generator, compilation, output) = Run("""
+			using CsvHelper;
+			public class T { public int Value { get; set; } }
+			public class U { public int Value { get; set; } }
+			[CsvRecordMap(typeof(T))] partial class MyMap { }
+			[CsvRecordMap(typeof(T))] partial class ZMyMap { }
+			[CsvRecordMap(typeof(U))] partial class OtherMap { }
+			""");
+
+		Assert.Equal(2, generator.Length);
+		Assert.All(generator, diagnostic => Assert.Equal("CSVH012", diagnostic.Id));
+		Assert.Empty(compilation.Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning));
+		Assert.DoesNotContain("partial class MyMap", output);
+		Assert.DoesNotContain("partial class ZMyMap", output);
+		Assert.DoesNotContain("Register<global::T>", output);
+		Assert.Contains("Register<global::U>(global::OtherMap.CreateCsvMapper);", output);
+	}
+
+	[Fact]
+	public void RecordMapsForDifferentClosedGenericTypesAreNotDuplicates()
+	{
+		var (generator, compilation, output) = Run("""
+			using CsvHelper;
+			public class T<TValue> { public TValue Value { get; set; } = default!; }
+			[CsvRecordMap(typeof(T<int>))] partial class IntMap { }
+			[CsvRecordMap(typeof(T<string>))] partial class StringMap { }
+			""");
+
+		Assert.Empty(generator);
+		Assert.Empty(compilation.Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning));
+		Assert.Contains("Register<global::T<int>>(global::IntMap.CreateCsvMapper);", output);
+		Assert.Contains("Register<global::T<string>>(global::StringMap.CreateCsvMapper);", output);
 	}
 
 	[Fact]

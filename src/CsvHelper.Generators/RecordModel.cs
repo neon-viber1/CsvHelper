@@ -75,6 +75,9 @@ internal sealed record RecordModel(
 	WriterModel Writer,
 	EquatableArray<DiagnosticInfo> Diagnostics)
 {
+	/// <summary>The [CsvRecordMap] attribute's location, or null for a [CsvRecord] type.</summary>
+	public LocationInfo? MapLocation { get; init; }
+
 	/// <summary>
 	/// Whether no code is generated although no error was reported, such as for a [CsvRecordMap] whose type does not exist
 	/// (which the compiler reports).

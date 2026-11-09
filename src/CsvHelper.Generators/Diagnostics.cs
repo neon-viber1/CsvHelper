@@ -107,8 +107,8 @@ internal static class Diagnostics
 		Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
 	/// <summary>
-	/// CSVH012: a [CsvRecordMap] cannot map its type (the type cannot be a record type, already has a mapper, or is not
-	/// accessible), or a member of the map class stands in for no member of the type, or for one of another type.
+	/// CSVH012: a [CsvRecordMap] cannot map its type (the type cannot be a record type, already has a mapper, is targeted by
+	/// multiple map classes, or is not accessible), or a member of the map class stands in for no member of the type, or for one of another type.
 	/// Arguments: the map class, the mapped type and the reason.
 	/// </summary>
 	public static readonly DiagnosticDescriptor InvalidRecordMap = new(

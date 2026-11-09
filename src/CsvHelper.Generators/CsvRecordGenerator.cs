@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -36,7 +38,8 @@ public sealed class CsvRecordGenerator : IIncrementalGenerator
 		var maps = context.SyntaxProvider.ForAttributeWithMetadataName(
 			"CsvHelper.CsvRecordMapAttribute",
 			static (node, _) => node is TypeDeclarationSyntax,
-			static (context, cancellationToken) => RecordParser.ParseMap(context, cancellationToken));
+			static (context, cancellationToken) => RecordParser.ParseMap(context, cancellationToken))
+			.Collect().SelectMany(static (models, _) => CheckDuplicateMaps(models));
 
 		// Projections (the mappers that read only some members, for CsvHelper.Linq) are generated only when they can be used.
 		var projections = context.CompilationProvider.Select(static (c, _) => Projections(c));
@@ -72,6 +75,22 @@ public sealed class CsvRecordGenerator : IIncrementalGenerator
 			var registrations = records.Concat(maps).Concat(mappers).OrderBy(r => r.FullName, System.StringComparer.Ordinal);
 			context.AddSource("CsvRecordRegistrations.g.cs", RecordEmitter.EmitRegistrations(registrations, polyfill));
 		});
+	}
+
+	private static IEnumerable<RecordModel> CheckDuplicateMaps(ImmutableArray<RecordModel> models)
+	{
+		foreach (var group in models.GroupBy(model => model.FullName, System.StringComparer.Ordinal))
+		{
+			var duplicate = group.Count(model => model.MapLocation is not null) > 1;
+			foreach (var model in group)
+			{
+				yield return duplicate && model.MapLocation is not null ? model with
+				{
+					Diagnostics = new([.. model.Diagnostics, new DiagnosticInfo(Diagnostics.InvalidRecordMap, model.MapLocation,
+						new([model.HostFullName, model.FullName, "multiple [CsvRecordMap] classes target this type; only one map per type is supported"]))])
+				} : model;
+			}
+		}
 	}
 
 	/// <summary>Reports the diagnostics of a record type or map, and adds its code when it has no errors.</summary>
